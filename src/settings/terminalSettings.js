@@ -196,6 +196,13 @@ export default function terminalSettings() {
 			category: categories.session,
 		},
 		{
+			key: "failsafeMode",
+			text: strings["terminal:failsafe"],
+			checkbox: terminalValues.failsafeMode,
+			info: strings["terminal:failsafe-info"],
+			category: categories.maintenance,
+		},
+		{
 			key: "backup",
 			text: strings.backup,
 			info: strings["info-backup"],
@@ -384,6 +391,7 @@ export async function updateActiveTerminals(key, value) {
 				case "fontFamily":
 					// Load font if it's not already loaded
 					try {
+						fonts.injectFontFace(value);
 						await fonts.loadFont(value);
 					} catch (error) {
 						console.warn(`Failed to load font ${value}:`, error);

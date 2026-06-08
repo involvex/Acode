@@ -738,5 +738,13 @@
 	"iap-pro-purchase-warning": "Dieser Kauf wird nicht mit Ihrem Acode-Konto synchronisiert. Verwenden Sie dasselbe Google-Konto im Play Store, um Ihren Kauf wiederherzustellen.",
 	"confirm-login": "Sie sind nicht bei Acode angemeldet, jetzt anmelden?",
 	"local word completion": "Local word completion",
-	"settings-info-editor-local-word-completion": "Suggest words from the current file."
+	"settings-info-editor-local-word-completion": "Suggest words from the current file.",
+	"terminal:failsafe": "FailSafe mode",
+	"terminal:failsafe-info": "Start terminal with system shell",
+	"auto rename tags": "Auto rename tags",
+	"settings-info-editor-auto-rename-tags": "Rename the matching opening or closing tag while editing HTML-like tags.",
+	"copying items": "Copying {count} items...",
+	"cannot paste folder into itself": "Cannot paste a folder into itself",
+	"folder already exists": "Folder already exists",
+	"file already exists force named": "'{name}' already exists. Overwrite?"
 }

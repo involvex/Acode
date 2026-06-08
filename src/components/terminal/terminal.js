@@ -21,7 +21,10 @@ import confirm from "dialogs/confirm";
 import fonts from "lib/fonts";
 import appSettings from "lib/settings";
 import LigaturesAddon from "./ligatures";
-import { getTerminalSettings } from "./terminalDefaults";
+import {
+	DEFAULT_TERMINAL_SETTINGS,
+	getTerminalSettings,
+} from "./terminalDefaults";
 import TerminalThemeManager from "./terminalThemeManager";
 import TerminalTouchSelection from "./terminalTouchSelection";
 
@@ -67,6 +70,7 @@ export default class TerminalComponent {
 		this.touchSelection = null;
 		this.parsedAppKeybindings = [];
 		this.parsedAppKeybindingsVersion = -1;
+		this.boundNativeSelectionMenuHandler = null;
 
 		this.init();
 	}
@@ -103,8 +107,13 @@ export default class TerminalComponent {
 			this.loadImageAddon();
 		}
 
-		// Load font if specified
-		this.loadTerminalFont();
+		// Load font in background - apply when ready without blocking render
+		this._fontReady = this.loadTerminalFont().then(() => {
+			if (this.terminal) {
+				this.terminal.options.fontFamily = this.options.fontFamily;
+				this.terminal.refresh(0, this.terminal.rows - 1);
+			}
+		});
 
 		// Set up terminal event handlers
 		this.setupEventHandlers();
@@ -508,6 +517,7 @@ export default class TerminalComponent {
       overflow: hidden;
       box-sizing: border-box;
     `;
+		this.disableNativeSelectionMenu(this.container);
 
 		return this.container;
 	}
@@ -525,6 +535,7 @@ export default class TerminalComponent {
 
 		// Apply terminal background color to container to match theme
 		this.container.style.background = this.options.theme.background;
+		this.disableNativeSelectionMenu(this.container);
 
 		try {
 			// Open first to ensure a stable renderer is attached
@@ -559,22 +570,72 @@ export default class TerminalComponent {
 			// First render pass: schedule a fit + focus once the frame is ready
 			if (typeof requestAnimationFrame === "function") {
 				requestAnimationFrame(() => {
+					if (!this.terminal) return;
 					this.fitAddon.fit();
 					this.terminal.focus();
 					this.setupTouchSelection();
 				});
 			} else {
 				setTimeout(() => {
+					if (!this.terminal) return;
 					this.fitAddon.fit();
 					this.terminal.focus();
 					this.setupTouchSelection();
 				}, 0);
+			}
+
+			// Safety: re-apply fontFamily on next frame to ensure xterm
+			// uses correct metrics even if font wasn't ready for first paint
+			if (typeof requestAnimationFrame === "function") {
+				requestAnimationFrame(() => {
+					if (this.terminal) {
+						this.terminal.options.fontFamily = this.options.fontFamily;
+						this.terminal.refresh(0, this.terminal.rows - 1);
+					}
+				});
+			} else {
+				setTimeout(() => {
+					if (this.terminal) {
+						this.terminal.options.fontFamily = this.options.fontFamily;
+						this.terminal.refresh(0, this.terminal.rows - 1);
+					}
+				}, 16);
 			}
 		} catch (error) {
 			console.error("Failed to mount terminal:", error);
 		}
 
 		return container;
+	}
+
+	/**
+	 * Disable the platform/browser text-selection menu in terminal views.
+	 * Terminal selection is handled by TerminalTouchSelection and xterm APIs.
+	 */
+	disableNativeSelectionMenu(container) {
+		if (!container) return;
+
+		container.classList.add("terminal-native-selection-disabled");
+
+		if (this.boundNativeSelectionMenuHandler) {
+			container.removeEventListener(
+				"contextmenu",
+				this.boundNativeSelectionMenuHandler,
+				true,
+			);
+		}
+
+		this.boundNativeSelectionMenuHandler = (event) => {
+			if (event.target?.closest?.(".terminal-context-menu")) return;
+			event.preventDefault();
+			event.stopPropagation();
+		};
+
+		container.addEventListener(
+			"contextmenu",
+			this.boundNativeSelectionMenuHandler,
+			true,
+		);
 	}
 
 	/**
@@ -598,7 +659,25 @@ export default class TerminalComponent {
 
 			// Start AXS if not running
 			if (!(await Terminal.isAxsRunning())) {
-				await Terminal.startAxs(false, () => {}, console.error);
+				const values = appSettings.value;
+				// Initialize terminal settings with defaults if not present
+				if (!values.terminalSettings) {
+					values.terminalSettings = {
+						...DEFAULT_TERMINAL_SETTINGS,
+						fontFamily:
+							DEFAULT_TERMINAL_SETTINGS.fontFamily ||
+							appSettings.value.fontFamily,
+					};
+				}
+
+				const terminalValues = values.terminalSettings;
+
+				await Terminal.startAxs(
+					false,
+					() => {},
+					console.error,
+					terminalValues.failsafeMode,
+				);
 
 				// Check if AXS started with interval polling
 				const maxRetries = 10;
@@ -984,6 +1063,7 @@ export default class TerminalComponent {
 		const fontFamily = this.options.fontFamily;
 		if (fontFamily && fonts.get(fontFamily)) {
 			try {
+				fonts.injectFontFace(fontFamily);
 				await fonts.loadFont(fontFamily);
 			} catch (error) {
 				console.warn(`Failed to load terminal font ${fontFamily}:`, error);
@@ -1081,6 +1161,15 @@ export default class TerminalComponent {
 
 		if (this.terminal) {
 			this.terminal.dispose();
+		}
+
+		if (this.container && this.boundNativeSelectionMenuHandler) {
+			this.container.removeEventListener(
+				"contextmenu",
+				this.boundNativeSelectionMenuHandler,
+				true,
+			);
+			this.boundNativeSelectionMenuHandler = null;
 		}
 
 		if (this.container) {
